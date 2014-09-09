@@ -112,10 +112,13 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
         *unhandled = YAML_NO_EVENT;
 
     /* wait for a node that is not a stream/doc start event */
-    do {
+    while (1) {
         if (! yaml_parser_parse(parser, &event))
             return NULL;
-    } while (event.type == YAML_STREAM_START_EVENT || event.type == YAML_DOCUMENT_START_EVENT);
+        if (! (event.type == YAML_STREAM_START_EVENT || event.type == YAML_DOCUMENT_START_EVENT))
+            break;
+        yaml_event_delete(&event);
+    }
 
     switch (event.type) {
     case YAML_ALIAS_EVENT:
@@ -138,6 +141,8 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
             *unhandled = event.type;
         break;
     }
+
+    yaml_event_delete(&event);
 
     return node;
 }
