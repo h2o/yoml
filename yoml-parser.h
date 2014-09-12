@@ -23,6 +23,7 @@
 #define yoml_parser_h
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <yaml.h>
 #include "yoml.h"
