@@ -35,18 +35,20 @@ static inline char *yoml__strdup(yaml_char_t *s)
     return strdup((char*)s);
 }
 
-static inline yoml_t *yoml__new_node(yoml_type_t type, yaml_char_t *anchor, size_t sz)
+static inline yoml_t *yoml__new_node(yoml_type_t type, size_t sz, yaml_char_t *anchor, yaml_event_t *event)
 {
     yoml_t *node = malloc(sz);
     node->type = type;
+    node->line = event->start_mark.line;
+    node->column = event->start_mark.column;
     node->anchor = anchor != NULL ? yoml__strdup(anchor) : NULL;
     node->_refcnt = 1;
     return node;
 }
 
-static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_char_t *anchor)
+static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_event_t *event)
 {
-    yoml_t *seq = yoml__new_node(YOML_TYPE_SEQUENCE, anchor, offsetof(yoml_t, data.sequence.elements));
+    yoml_t *seq = yoml__new_node(YOML_TYPE_SEQUENCE, offsetof(yoml_t, data.sequence.elements), event->data.sequence_start.anchor, event);
 
     seq->data.sequence.size = 0;
 
@@ -69,9 +71,9 @@ static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_char_t *a
     return seq;
 }
 
-static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_char_t *anchor)
+static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_event_t *event)
 {
-    yoml_t *map = yoml__new_node(YOML_TYPE_MAPPING, anchor, offsetof(yoml_t, data.mapping.elements));
+    yoml_t *map = yoml__new_node(YOML_TYPE_MAPPING, offsetof(yoml_t, data.mapping.elements), event->data.mapping_start.anchor, event);
 
     map->data.mapping.size = 0;
 
@@ -117,18 +119,18 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
 
     switch (event.type) {
     case YAML_ALIAS_EVENT:
-        node = yoml__new_node(YOML__TYPE_UNRESOLVED_ALIAS, NULL, sizeof(*node));
+        node = yoml__new_node(YOML__TYPE_UNRESOLVED_ALIAS, sizeof(*node), NULL, &event);
         node->data.alias = yoml__strdup(event.data.alias.anchor);
         break;
     case YAML_SCALAR_EVENT:
-        node = yoml__new_node(YOML_TYPE_SCALAR, event.data.scalar.anchor, sizeof(*node));
+        node = yoml__new_node(YOML_TYPE_SCALAR, sizeof(*node), event.data.scalar.anchor, &event);
         node->data.scalar = yoml__strdup(event.data.scalar.value);
         break;
     case YAML_SEQUENCE_START_EVENT:
-        node = yoml__parse_sequence(parser, event.data.sequence_start.anchor);
+        node = yoml__parse_sequence(parser, &event);
         break;
     case YAML_MAPPING_START_EVENT:
-        node = yoml__parse_mapping(parser, event.data.mapping_start.anchor);
+        node = yoml__parse_mapping(parser, &event);
         break;
     default:
         node = NULL;

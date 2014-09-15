@@ -51,6 +51,8 @@ typedef struct st_yoml_mapping_t {
 
 struct st_yoml_t {
     yoml_type_t type;
+    size_t line;
+    size_t column;
     char *anchor;
     size_t _refcnt;
     union {
