@@ -122,4 +122,18 @@ static inline yoml_t *yoml_find_anchor(yoml_t *node, const char *name)
     return NULL;
 }
 
+static inline yoml_t *yoml_get(yoml_t *node, const char *name)
+{
+    size_t i;
+
+    if (node->type != YOML_TYPE_MAPPING)
+        return NULL;
+    for (i = 0; i != node->data.mapping.size; ++i) {
+        yoml_t *key = node->data.mapping.elements[i].key;
+        if (key->type == YOML_TYPE_SCALAR && strcmp(key->data.scalar, name) == 0)
+            return node->data.mapping.elements[i].value;
+    }
+    return NULL;
+}
+
 #endif
