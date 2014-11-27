@@ -22,6 +22,10 @@
 #ifndef yoml_h
 #define yoml_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -135,5 +139,9 @@ static inline yoml_t *yoml_get(yoml_t *node, const char *name)
     }
     return NULL;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

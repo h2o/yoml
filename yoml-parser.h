@@ -22,6 +22,10 @@
 #ifndef yoml_parser_h
 #define yoml_parser_h
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -201,5 +205,9 @@ static inline yoml_t *yoml_parse_document(yaml_parser_t *parser, yaml_event_type
 
     return doc;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
