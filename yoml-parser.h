@@ -153,9 +153,47 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
     return node;
 }
 
+static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
+{
+    yoml_t *key, *value;
+    size_t i, j;
+
+    if (src->type != YOML_TYPE_MAPPING)
+        return -1;
+
+    if (src->data.mapping.size != 0) {
+        i = src->data.mapping.size;
+        do {
+            --i;
+            key = src->data.mapping.elements[i].key;
+            value = src->data.mapping.elements[i].value;
+            if (key->type == YOML_TYPE_SCALAR) {
+                for (j = 0; j != (*dest)->data.mapping.size; ++j) {
+                    if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
+                        strcmp((*dest)->data.mapping.elements[j].key->data.scalar, key->data.scalar) == 0)
+                        goto Skip;
+                }
+            }
+            *dest = realloc(*dest, offsetof(yoml_t, data.mapping.elements) +
+                            ((*dest)->data.mapping.size + 1) * sizeof((*dest)->data.mapping.elements[0]));
+            memmove((*dest)->data.mapping.elements + offset + 1, (*dest)->data.mapping.elements + offset,
+                    ((*dest)->data.mapping.size - offset) * sizeof((*dest)->data.mapping.elements[0]));
+            ++(*dest)->data.mapping.size;
+            (*dest)->data.mapping.elements[offset].key = key;
+            ++key->_refcnt;
+            (*dest)->data.mapping.elements[offset].value = value;
+            ++value->_refcnt;
+        Skip:
+            ;
+        } while (i != 0);
+    }
+
+    return 0;
+}
+
 static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
 {
-    size_t i;
+    size_t i, j;
 
     switch ((*target)->type) {
     case YOML_TYPE_SCALAR:
@@ -167,10 +205,38 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
         }
         break;
     case YOML_TYPE_MAPPING:
-         for (i = 0; i != (*target)->data.mapping.size; ++i) {
-            if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc) != 0
-                || yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc) != 0)
-                return -1;
+        /* traverse in descending order (for ease of merge) */
+        if ((*target)->data.mapping.size != 0) {
+            i = (*target)->data.mapping.size;
+            do {
+                --i;
+                /* merge the value */
+                if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc) != 0)
+                    return -1;
+                /* merge the keys or resolve the alias */
+                if ((*target)->data.mapping.elements[i].key->type == YOML_TYPE_SCALAR &&
+                    strcmp((*target)->data.mapping.elements[i].key->data.scalar, "<<") == 0) {
+                    /* erase the slot (as well as preserving the values) */
+                    yoml_t *src = (*target)->data.mapping.elements[i].value;
+                    yoml_free((*target)->data.mapping.elements[i].key);
+                    memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
+                            ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
+                    --(*target)->data.mapping.size;
+                    /* merge */
+                    if (src->type == YOML_TYPE_SEQUENCE) {
+                        for (j = 0; j != src->data.sequence.size; ++j)
+                            if (yoml__merge(target, i, src->data.sequence.elements[j]) != 0)
+                                return -1;
+                    } else {
+                        if (yoml__merge(target, i, src) != 0)
+                            return -1;
+                    }
+                    /* cleanup */
+                    yoml_free(src);
+                } else if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc) != 0) {
+                    return -1;
+                }
+            } while (i != 0);
         }
         break;
     case YOML__TYPE_UNRESOLVED_ALIAS:
