@@ -191,7 +191,7 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
     return 0;
 }
 
-static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
+static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc, yaml_parser_t *parser)
 {
     size_t i, j;
 
@@ -200,7 +200,7 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
         break;
     case YOML_TYPE_SEQUENCE:
         for (i = 0; i != (*target)->data.sequence.size; ++i) {
-            if (yoml__resolve_alias((*target)->data.sequence.elements + i, doc) != 0)
+            if (yoml__resolve_alias((*target)->data.sequence.elements + i, doc, parser) != 0)
                 return -1;
         }
         break;
@@ -211,29 +211,36 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
             do {
                 --i;
                 /* merge the value */
-                if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc) != 0)
+                if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc, parser) != 0)
                     return -1;
                 /* merge the keys or resolve the alias */
                 if ((*target)->data.mapping.elements[i].key->type == YOML_TYPE_SCALAR &&
                     strcmp((*target)->data.mapping.elements[i].key->data.scalar, "<<") == 0) {
                     /* erase the slot (as well as preserving the values) */
-                    yoml_t *src = (*target)->data.mapping.elements[i].value;
-                    yoml_free((*target)->data.mapping.elements[i].key);
+                    yoml_mapping_element_t src = (*target)->data.mapping.elements[i];
                     memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
                             ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
                     --(*target)->data.mapping.size;
                     /* merge */
-                    if (src->type == YOML_TYPE_SEQUENCE) {
-                        for (j = 0; j != src->data.sequence.size; ++j)
-                            if (yoml__merge(target, i, src->data.sequence.elements[j]) != 0)
+                    if (src.value->type == YOML_TYPE_SEQUENCE) {
+                        for (j = 0; j != src.value->data.sequence.size; ++j)
+                            if (yoml__merge(target, i, src.value->data.sequence.elements[j]) != 0) {
+                            MergeError:
+                                if (parser != NULL) {
+                                    parser->problem = "value of the merge key MUST be a mapping or a sequence of mappings";
+                                    parser->problem_mark.line = src.key->line;
+                                    parser->problem_mark.column = src.key->column;
+                                }
                                 return -1;
+                            }
                     } else {
-                        if (yoml__merge(target, i, src) != 0)
-                            return -1;
+                        if (yoml__merge(target, i, src.value) != 0)
+                            goto MergeError;
                     }
                     /* cleanup */
-                    yoml_free(src);
-                } else if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc) != 0) {
+                    yoml_free(src.key);
+                    yoml_free(src.value);
+                } else if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc, parser) != 0) {
                     return -1;
                 }
             } while (i != 0);
@@ -242,8 +249,14 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
     case YOML__TYPE_UNRESOLVED_ALIAS:
         {
             yoml_t *node = yoml_find_anchor(doc, (*target)->data.alias);
-            if (node == NULL)
+            if (node == NULL) {
+                if (parser != NULL) {
+                    parser->problem = "could not to resolve the alias";
+                    parser->problem_mark.line = (*target)->line;
+                    parser->problem_mark.column = (*target)->column;
+                }
                 return -1;
+            }
             yoml_free(*target);
             *target = node;
             ++node->_refcnt;
@@ -266,7 +279,7 @@ static inline yoml_t *yoml_parse_document(yaml_parser_t *parser, yaml_event_type
         *unhandled = YAML_NO_EVENT;
 
     /* resolve aliases */
-    if (yoml__resolve_alias(&doc, doc) != 0) {
+    if (yoml__resolve_alias(&doc, doc, parser) != 0) {
         yoml_free(doc);
         doc = NULL;
     }
