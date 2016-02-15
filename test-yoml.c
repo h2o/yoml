@@ -32,7 +32,7 @@ static yoml_t *parse(const char *fn, const char *s)
 
     yaml_parser_initialize(&parser);
     yaml_parser_set_input_string(&parser, (yaml_char_t*)s, strlen(s));
-    doc = yoml_parse_document(&parser, NULL, fn);
+    doc = yoml_parse_document(&parser, NULL, NULL, fn);
     yaml_parser_delete(&parser);
 
     return doc;
@@ -58,7 +58,7 @@ int main(int argc, char **argv)
     ok(strcmp(doc->filename, "foo.yaml") == 0);
     ok(doc->type == YOML_TYPE_SCALAR);
     ok(strcmp(doc->data.scalar, "abc") == 0);
-    yoml_free(doc);
+    yoml_free(doc, NULL);
 
     doc = parse(
        "foo.yaml",
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     ok(strcmp(t->filename, "foo.yaml") == 0);
     ok(t->type == YOML_TYPE_SCALAR);
     ok(strcmp(t->data.scalar, "d") == 0);
-    yoml_free(doc);
+    yoml_free(doc, NULL);
 
     doc = parse(
             "bar.yaml",
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
     ok(strcmp(doc->filename, "bar.yaml") == 0);
     ok(t->type == YOML_TYPE_SCALAR);
     ok(strcmp(t->data.scalar, "e") == 0);
-    yoml_free(doc);
+    yoml_free(doc, NULL);
 
     doc = parse(
         "baz.yaml",
