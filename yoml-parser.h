@@ -33,11 +33,12 @@ extern "C" {
 #include <yaml.h>
 #include "yoml.h"
 
-static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *last_event, const char *filename);
+static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *last_event, void *(*mem_set)(void *, int, size_t),
+                                const char *filename);
 
 static inline char *yoml__strdup(yaml_char_t *s)
 {
-    return strdup((char*)s);
+    return strdup((char *)s);
 }
 
 static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, size_t sz, yaml_char_t *anchor, yaml_event_t *event)
@@ -52,51 +53,55 @@ static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, siz
     return node;
 }
 
-static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_event_t *event, const char *filename)
+static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_event_t *event, void *(*mem_set)(void *, int, size_t),
+                                           const char *filename)
 {
-    yoml_t *seq = yoml__new_node(filename, YOML_TYPE_SEQUENCE, offsetof(yoml_t, data.sequence.elements), event->data.sequence_start.anchor, event);
+    yoml_t *seq = yoml__new_node(filename, YOML_TYPE_SEQUENCE, offsetof(yoml_t, data.sequence.elements),
+                                 event->data.sequence_start.anchor, event);
 
     seq->data.sequence.size = 0;
 
     while (1) {
         yoml_t *new_node;
         yaml_event_type_t unhandled;
-        if ((new_node = yoml__parse_node(parser, &unhandled, filename)) == NULL) {
+        if ((new_node = yoml__parse_node(parser, &unhandled, mem_set, filename)) == NULL) {
             if (unhandled == YAML_SEQUENCE_END_EVENT) {
                 break;
             } else {
-                yoml_free(seq);
+                yoml_free(seq, mem_set);
                 seq = NULL;
                 break;
             }
         }
-        seq = realloc(seq, offsetof(yoml_t, data.sequence.elements) + sizeof(yoml_t*) * (seq->data.sequence.size + 1));
+        seq = realloc(seq, offsetof(yoml_t, data.sequence.elements) + sizeof(yoml_t *) * (seq->data.sequence.size + 1));
         seq->data.sequence.elements[seq->data.sequence.size++] = new_node;
     }
 
     return seq;
 }
 
-static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_event_t *event, const char *filename)
+static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_event_t *event, void *(*mem_set)(void *, int, size_t),
+                                          const char *filename)
 {
-    yoml_t *map = yoml__new_node(filename, YOML_TYPE_MAPPING, offsetof(yoml_t, data.mapping.elements), event->data.mapping_start.anchor, event);
+    yoml_t *map = yoml__new_node(filename, YOML_TYPE_MAPPING, offsetof(yoml_t, data.mapping.elements),
+                                 event->data.mapping_start.anchor, event);
 
     map->data.mapping.size = 0;
 
     while (1) {
         yoml_t *key, *value;
         yaml_event_type_t unhandled;
-        if ((key = yoml__parse_node(parser, &unhandled, filename)) == NULL) {
+        if ((key = yoml__parse_node(parser, &unhandled, mem_set, filename)) == NULL) {
             if (unhandled == YAML_MAPPING_END_EVENT) {
                 break;
             } else {
-                yoml_free(map);
+                yoml_free(map, mem_set);
                 map = NULL;
                 break;
             }
         }
-        if ((value = yoml__parse_node(parser, NULL, filename)) == NULL) {
-            yoml_free(map);
+        if ((value = yoml__parse_node(parser, NULL, mem_set, filename)) == NULL) {
+            yoml_free(map, mem_set);
             map = NULL;
             break;
         }
@@ -109,7 +114,8 @@ static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_event_t *e
     return map;
 }
 
-inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhandled, const char *filename)
+static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhandled, void *(*mem_set)(void *, int, size_t),
+                                const char *filename)
 {
     yoml_t *node;
     yaml_event_t event;
@@ -119,9 +125,9 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
 
     /* wait for a node that is not a stream/doc start event */
     while (1) {
-        if (! yaml_parser_parse(parser, &event))
+        if (!yaml_parser_parse(parser, &event))
             return NULL;
-        if (! (event.type == YAML_STREAM_START_EVENT || event.type == YAML_DOCUMENT_START_EVENT))
+        if (!(event.type == YAML_STREAM_START_EVENT || event.type == YAML_DOCUMENT_START_EVENT))
             break;
         yaml_event_delete(&event);
     }
@@ -134,12 +140,14 @@ inline yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
     case YAML_SCALAR_EVENT:
         node = yoml__new_node(filename, YOML_TYPE_SCALAR, sizeof(*node), event.data.scalar.anchor, &event);
         node->data.scalar = yoml__strdup(event.data.scalar.value);
+        if (mem_set != NULL)
+            mem_set(event.data.scalar.value, 'A', strlen(node->data.scalar));
         break;
     case YAML_SEQUENCE_START_EVENT:
-        node = yoml__parse_sequence(parser, &event, filename);
+        node = yoml__parse_sequence(parser, &event, mem_set, filename);
         break;
     case YAML_MAPPING_START_EVENT:
-        node = yoml__parse_mapping(parser, &event, filename);
+        node = yoml__parse_mapping(parser, &event, mem_set, filename);
         break;
     default:
         node = NULL;
@@ -191,7 +199,7 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
     return 0;
 }
 
-static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
+static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc, void *(*mem_set)(void *, int, size_t))
 {
     size_t i, j;
 
@@ -200,7 +208,7 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
         break;
     case YOML_TYPE_SEQUENCE:
         for (i = 0; i != (*target)->data.sequence.size; ++i) {
-            if (yoml__resolve_alias((*target)->data.sequence.elements + i, doc) != 0)
+            if (yoml__resolve_alias((*target)->data.sequence.elements + i, doc, mem_set) != 0)
                 return -1;
         }
         break;
@@ -211,14 +219,14 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
             do {
                 --i;
                 /* merge the value */
-                if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc) != 0)
+                if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].value, doc, mem_set) != 0)
                     return -1;
                 /* merge the keys or resolve the alias */
                 if ((*target)->data.mapping.elements[i].key->type == YOML_TYPE_SCALAR &&
                     strcmp((*target)->data.mapping.elements[i].key->data.scalar, "<<") == 0) {
                     /* erase the slot (as well as preserving the values) */
                     yoml_t *src = (*target)->data.mapping.elements[i].value;
-                    yoml_free((*target)->data.mapping.elements[i].key);
+                    yoml_free((*target)->data.mapping.elements[i].key, mem_set);
                     memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
                             ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
                     --(*target)->data.mapping.size;
@@ -232,42 +240,41 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc)
                             return -1;
                     }
                     /* cleanup */
-                    yoml_free(src);
-                } else if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc) != 0) {
+                    yoml_free(src, mem_set);
+                } else if (yoml__resolve_alias(&(*target)->data.mapping.elements[i].key, doc, mem_set) != 0) {
                     return -1;
                 }
             } while (i != 0);
         }
         break;
-    case YOML__TYPE_UNRESOLVED_ALIAS:
-        {
-            yoml_t *node = yoml_find_anchor(doc, (*target)->data.alias);
-            if (node == NULL)
-                return -1;
-            yoml_free(*target);
-            *target = node;
-            ++node->_refcnt;
-        }
-        break;
+    case YOML__TYPE_UNRESOLVED_ALIAS: {
+        yoml_t *node = yoml_find_anchor(doc, (*target)->data.alias);
+        if (node == NULL)
+            return -1;
+        yoml_free(*target, mem_set);
+        *target = node;
+        ++node->_refcnt;
+    } break;
     }
 
     return 0;
 }
 
-static inline yoml_t *yoml_parse_document(yaml_parser_t *parser, yaml_event_type_t *unhandled, const char *filename)
+static inline yoml_t *yoml_parse_document(yaml_parser_t *parser, yaml_event_type_t *unhandled,
+                                          void *(*mem_set)(void *, int, size_t), const char *filename)
 {
     yoml_t *doc;
 
     /* parse */
-    if ((doc = yoml__parse_node(parser, unhandled, filename)) == NULL) {
+    if ((doc = yoml__parse_node(parser, unhandled, mem_set, filename)) == NULL) {
         return NULL;
     }
     if (unhandled != NULL)
         *unhandled = YAML_NO_EVENT;
 
     /* resolve aliases */
-    if (yoml__resolve_alias(&doc, doc) != 0) {
-        yoml_free(doc);
+    if (yoml__resolve_alias(&doc, doc, mem_set) != 0) {
+        yoml_free(doc, mem_set);
         doc = NULL;
     }
 
