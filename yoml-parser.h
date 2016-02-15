@@ -258,7 +258,7 @@ static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc, yaml_parser_
         yoml_t *node = yoml_find_anchor(doc, (*target)->data.alias);
         if (node == NULL) {
             if (parser != NULL) {
-                parser->problem = "could not to resolve the alias";
+                parser->problem = "could not resolve the alias";
                 parser->problem_mark.line = (*target)->line;
                 parser->problem_mark.column = (*target)->column;
             }
