@@ -215,5 +215,40 @@ int main(int argc, char **argv)
         ok(strcmp(t->data.scalar, "10") == 0);
     }
 
+    doc = parse(
+        "foo.yaml",
+        "- &link\n"
+        "  x: 1\n"
+        "  x: 2\n"
+        "-\n"
+        "  x: 3\n"
+        "  <<: *link\n");
+    ok(doc != NULL);
+    ok(doc->type == YOML_TYPE_SEQUENCE);
+    ok(doc->data.sequence.size == 2);
+    ok(doc->data.sequence.elements[0]->type == YOML_TYPE_MAPPING);
+    ok(doc->data.sequence.elements[0]->data.mapping.size == 2);
+    ok(doc->data.sequence.elements[0]->data.mapping.elements[0].key->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[0]->data.mapping.elements[0].key->data.scalar, "x") == 0);
+    ok(doc->data.sequence.elements[0]->data.mapping.elements[0].value->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[0]->data.mapping.elements[0].value->data.scalar, "1") == 0);
+    ok(doc->data.sequence.elements[0]->data.mapping.elements[1].key->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[0]->data.mapping.elements[1].key->data.scalar, "x") == 0);
+    ok(doc->data.sequence.elements[0]->data.mapping.elements[1].value->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[0]->data.mapping.elements[1].value->data.scalar, "2") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.size == 3);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[0].key->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[0].key->data.scalar, "x") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[0].value->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[0].value->data.scalar, "3") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[1].key->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[1].key->data.scalar, "x") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[1].value->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[1].value->data.scalar, "1") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[2].key->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[2].key->data.scalar, "x") == 0);
+    ok(doc->data.sequence.elements[1]->data.mapping.elements[2].value->type == YOML_TYPE_SCALAR);
+    ok(strcmp(doc->data.sequence.elements[1]->data.mapping.elements[2].value->data.scalar, "2") == 0);
+
     return done_testing();
 }

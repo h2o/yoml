@@ -169,31 +169,28 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
     if (src->type != YOML_TYPE_MAPPING)
         return -1;
 
-    if (src->data.mapping.size != 0) {
-        i = src->data.mapping.size;
-        do {
-            --i;
-            key = src->data.mapping.elements[i].key;
-            value = src->data.mapping.elements[i].value;
-            if (key->type == YOML_TYPE_SCALAR) {
-                for (j = 0; j != (*dest)->data.mapping.size; ++j) {
-                    if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
-                        strcmp((*dest)->data.mapping.elements[j].key->data.scalar, key->data.scalar) == 0)
-                        goto Skip;
-                }
+    for (i = 0; i != src->data.mapping.size; ++i) {
+        key = src->data.mapping.elements[i].key;
+        value = src->data.mapping.elements[i].value;
+        if (key->type == YOML_TYPE_SCALAR) {
+            for (j = offset; j != (*dest)->data.mapping.size; ++j) {
+                if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
+                    strcmp((*dest)->data.mapping.elements[j].key->data.scalar, key->data.scalar) == 0)
+                    goto Skip;
             }
-            *dest = realloc(*dest, offsetof(yoml_t, data.mapping.elements) +
-                                       ((*dest)->data.mapping.size + 1) * sizeof((*dest)->data.mapping.elements[0]));
-            memmove((*dest)->data.mapping.elements + offset + 1, (*dest)->data.mapping.elements + offset,
-                    ((*dest)->data.mapping.size - offset) * sizeof((*dest)->data.mapping.elements[0]));
-            ++(*dest)->data.mapping.size;
-            (*dest)->data.mapping.elements[offset].key = key;
-            ++key->_refcnt;
-            (*dest)->data.mapping.elements[offset].value = value;
-            ++value->_refcnt;
-        Skip:
-            ;
-        } while (i != 0);
+        }
+        *dest = realloc(*dest, offsetof(yoml_t, data.mapping.elements) +
+                                   ((*dest)->data.mapping.size + 1) * sizeof((*dest)->data.mapping.elements[0]));
+        memmove((*dest)->data.mapping.elements + offset + 1, (*dest)->data.mapping.elements + offset,
+                ((*dest)->data.mapping.size - offset) * sizeof((*dest)->data.mapping.elements[0]));
+        (*dest)->data.mapping.elements[offset].key = key;
+        ++key->_refcnt;
+        (*dest)->data.mapping.elements[offset].value = value;
+        ++value->_refcnt;
+        ++(*dest)->data.mapping.size;
+        ++offset;
+    Skip:
+        ;
     }
 
     return 0;
