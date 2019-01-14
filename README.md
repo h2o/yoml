@@ -5,7 +5,7 @@ YOML is a DOM-like interface to YAML, implemented as a wrapper around [libyaml](
 
 It is a header-only library.  Just include the .h files to use the library.
 
-```
+```C
 #include "yoml.h" /* defines the structures */
 #include "yoml-parser.h" /* defines the parser */
 
