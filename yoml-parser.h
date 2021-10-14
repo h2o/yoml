@@ -40,6 +40,8 @@ typedef struct st_yoml_parse_args_t {
         yoml_t *(*cb)(const char *tag, yoml_t *node, void *cb_arg);
         void *cb_arg;
     } resolve_tag;
+    int resolve_alias : 1;
+    int resolve_merge : 1;
 } yoml_parse_args_t;
 
 static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *last_event, yoml_parse_args_t *parse_args);
@@ -177,17 +179,20 @@ static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
     return node;
 }
 
-static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
+static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_parse_args_t *parse_args)
 {
-    yoml_t *key, *value;
     size_t i, j;
 
     if (src->type != YOML_TYPE_MAPPING)
         return -1;
 
+    yoml_mapping_element_t *filtered[src->data.mapping.size];
+    size_t filtered_len = 0;
+
     for (i = 0; i != src->data.mapping.size; ++i) {
-        key = src->data.mapping.elements[i].key;
-        value = src->data.mapping.elements[i].value;
+        yoml_t *key = src->data.mapping.elements[i].key;
+
+        /* skip keys which will be overwrritten */
         if (key->type == YOML_TYPE_SCALAR) {
             for (j = offset; j != (*dest)->data.mapping.size; ++j) {
                 if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
@@ -195,19 +200,38 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src)
                     goto Skip;
             }
         }
-        *dest = realloc(*dest, offsetof(yoml_t, data.mapping.elements) +
-                                   ((*dest)->data.mapping.size + 1) * sizeof((*dest)->data.mapping.elements[0]));
-        memmove((*dest)->data.mapping.elements + offset + 1, (*dest)->data.mapping.elements + offset,
-                ((*dest)->data.mapping.size - offset) * sizeof((*dest)->data.mapping.elements[0]));
-        (*dest)->data.mapping.elements[offset].key = key;
-        ++key->_refcnt;
-        (*dest)->data.mapping.elements[offset].value = value;
-        ++value->_refcnt;
-        ++(*dest)->data.mapping.size;
-        ++offset;
-    Skip:
-        ;
+        filtered[filtered_len++] = &src->data.mapping.elements[i];
+    Skip:;
     }
+
+    yaml_event_t event = (yaml_event_t){
+        .start_mark = {.line = (*dest)->line, .column = (*dest)->column},
+    };
+    yoml_t *new_node = yoml__new_node((*dest)->filename, YOML_TYPE_MAPPING,
+                                      offsetof(yoml_t, data.mapping.elements) +
+                                          ((*dest)->data.mapping.size + filtered_len) * sizeof((*dest)->data.mapping.elements[0]),
+                                      (yaml_char_t *)((*dest)->anchor), (yaml_char_t *)((*dest)->tag), &event);
+    new_node->data.mapping.size = (*dest)->data.mapping.size + filtered_len;
+    for (i = 0; i != new_node->data.mapping.size; ++i) {
+        yoml_t *key, *value;
+        if (i < offset) {
+            key = (*dest)->data.mapping.elements[i].key;
+            value = (*dest)->data.mapping.elements[i].value;
+        } else if (i < offset + filtered_len) {
+            key = filtered[i - offset]->key;
+            value = filtered[i - offset]->value;
+        } else {
+            key = (*dest)->data.mapping.elements[i - filtered_len].key;
+            value = (*dest)->data.mapping.elements[i - filtered_len].value;
+        }
+        ++key->_refcnt;
+        ++value->_refcnt;
+        new_node->data.mapping.elements[i].key = key;
+        new_node->data.mapping.elements[i].value = value;
+    }
+
+    yoml_free(*dest, parse_args->mem_set);
+    *dest = new_node;
 
     return 0;
 }
@@ -244,7 +268,7 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                     /* merge */
                     if (src.value->type == YOML_TYPE_SEQUENCE) {
                         for (j = 0; j != src.value->data.sequence.size; ++j)
-                            if (yoml__merge(target, i, src.value->data.sequence.elements[j]) != 0) {
+                            if (yoml__merge(target, i, src.value->data.sequence.elements[j], parse_args) != 0) {
                             MergeError:
                                 if (parser != NULL) {
                                     parser->problem = "value of the merge key MUST be a mapping or a sequence of mappings";
@@ -254,7 +278,7 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                                 return -1;
                             }
                     } else {
-                        if (yoml__merge(target, i, src.value) != 0)
+                        if (yoml__merge(target, i, src.value, parse_args) != 0)
                             goto MergeError;
                     }
                     /* cleanup */
@@ -372,9 +396,9 @@ static inline yoml_t *yoml_parse_document(yaml_parser_t *parser, yaml_event_type
     /* resolve tags, aliases and merge */
     if (yoml__resolve_tag(&doc, parser, parse_args) != 0)
         goto Error;
-    if (yoml__resolve_alias(&doc, doc, parser, parse_args) != 0)
+    if (parse_args->resolve_alias && yoml__resolve_alias(&doc, doc, parser, parse_args) != 0)
         goto Error;
-    if (yoml__resolve_merge(&doc, parser, parse_args) != 0)
+    if (parse_args->resolve_merge && yoml__resolve_merge(&doc, parser, parse_args) != 0)
         goto Error;
 
     return doc;
