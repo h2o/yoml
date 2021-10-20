@@ -219,7 +219,6 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_pa
     }
 
     /* replace `*dest` with `new_node` */
-    yoml_free(*dest, parse_args->mem_set);
     *dest = new_node;
 
     return 0;
@@ -270,9 +269,6 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                     memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
                             ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
                     --(*target)->data.mapping.size;
-                    /* cleanup */
-                    yoml_free(src.key, parse_args->mem_set);
-                    yoml_free(src.value, parse_args->mem_set);
                 }
             } while (i != 0);
         }
