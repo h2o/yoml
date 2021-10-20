@@ -181,55 +181,43 @@ static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
 
 static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_parse_args_t *parse_args)
 {
-    size_t i, j;
+    assert(offset >= 1);
 
     if (src->type != YOML_TYPE_MAPPING)
         return -1;
 
-    yoml_mapping_element_t *filtered[src->data.mapping.size];
-    size_t filtered_len = 0;
+    /* create new node, copy attributes and elements of `*dest` up to `offset` */
+    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size - 1) *
+                                                                            sizeof(new_node->data.mapping.elements[0]));
+    memcpy(new_node, *dest, offsetof(yoml_t, data.mapping.elements) + (offset - 1) * sizeof((*dest)->data.mapping.elements[0]));
+    new_node->data.mapping.size = offset - 1;
 
-    for (i = 0; i != src->data.mapping.size; ++i) {
-        yoml_t *key = src->data.mapping.elements[i].key;
-
-        /* skip keys which will be overwrritten */
-        if (key->type == YOML_TYPE_SCALAR) {
-            for (j = offset; j != (*dest)->data.mapping.size; ++j) {
+    /* copy elements from `src`, ignoring the ones that are defined later in `*dest` */
+    for (size_t i = 0; i != src->data.mapping.size; ++i) {
+        yoml_mapping_element_t *src_element = src->data.mapping.elements + i;
+        if (src_element->key->type == YOML_TYPE_SCALAR) {
+            for (size_t j = offset; j != (*dest)->data.mapping.size; ++j) {
                 if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
-                    strcmp((*dest)->data.mapping.elements[j].key->data.scalar, key->data.scalar) == 0)
+                    strcmp((*dest)->data.mapping.elements[j].key->data.scalar, src_element->key->data.scalar) == 0)
                     goto Skip;
             }
         }
-        filtered[filtered_len++] = &src->data.mapping.elements[i];
+        new_node->data.mapping.elements[new_node->data.mapping.size++] = *src_element;
     Skip:;
     }
 
-    yaml_event_t event = (yaml_event_t){
-        .start_mark = {.line = (*dest)->line, .column = (*dest)->column},
-    };
-    yoml_t *new_node = yoml__new_node((*dest)->filename, YOML_TYPE_MAPPING,
-                                      offsetof(yoml_t, data.mapping.elements) +
-                                          ((*dest)->data.mapping.size + filtered_len) * sizeof((*dest)->data.mapping.elements[0]),
-                                      (yaml_char_t *)((*dest)->anchor), (yaml_char_t *)((*dest)->tag), &event);
-    new_node->data.mapping.size = (*dest)->data.mapping.size + filtered_len;
-    for (i = 0; i != new_node->data.mapping.size; ++i) {
-        yoml_t *key, *value;
-        if (i < offset) {
-            key = (*dest)->data.mapping.elements[i].key;
-            value = (*dest)->data.mapping.elements[i].value;
-        } else if (i < offset + filtered_len) {
-            key = filtered[i - offset]->key;
-            value = filtered[i - offset]->value;
-        } else {
-            key = (*dest)->data.mapping.elements[i - filtered_len].key;
-            value = (*dest)->data.mapping.elements[i - filtered_len].value;
-        }
-        ++key->_refcnt;
-        ++value->_refcnt;
-        new_node->data.mapping.elements[i].key = key;
-        new_node->data.mapping.elements[i].value = value;
+    /* copy elements of `*dest` after `offset` */
+    memcpy(new_node->data.mapping.elements + new_node->data.mapping.size, (*dest)->data.mapping.elements + offset,
+           ((*dest)->data.mapping.size - offset) * sizeof(new_node->data.mapping.elements[0]));
+    new_node->data.mapping.size += (*dest)->data.mapping.size - offset;
+
+    /* increment the reference counters of the elements being added to the newly created node */
+    for (size_t i = 0; i != new_node->data.mapping.size; ++i) {
+        ++new_node->data.mapping.elements[i].key->_refcnt;
+        ++new_node->data.mapping.elements[i].value->_refcnt;
     }
 
+    /* replace `*dest` with `new_node` */
     yoml_free(*dest, parse_args->mem_set);
     *dest = new_node;
 
