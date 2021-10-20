@@ -187,10 +187,11 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_pa
         return -1;
 
     /* create new node, copy attributes and elements of `*dest` up to `offset` */
-    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size - 1) *
+    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size) *
                                                                             sizeof(new_node->data.mapping.elements[0]));
-    memcpy(new_node, *dest, offsetof(yoml_t, data.mapping.elements) + (offset - 1) * sizeof((*dest)->data.mapping.elements[0]));
-    new_node->data.mapping.size = offset - 1;
+    memcpy(new_node, *dest, offsetof(yoml_t, data.mapping.elements) + offset * sizeof((*dest)->data.mapping.elements[0]));
+    new_node->_refcnt = 1;
+    new_node->data.mapping.size = offset;
 
     /* copy elements from `src`, ignoring the ones that are defined later in `*dest` */
     for (size_t i = 0; i != src->data.mapping.size; ++i) {
