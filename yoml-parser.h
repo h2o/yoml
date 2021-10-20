@@ -260,15 +260,11 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                     return -1;
                 if ((*target)->data.mapping.elements[i].key->type == YOML_TYPE_SCALAR &&
                     strcmp((*target)->data.mapping.elements[i].key->data.scalar, "<<") == 0) {
-                    /* erase the slot (as well as preserving the values) */
                     yoml_mapping_element_t src = (*target)->data.mapping.elements[i];
-                    memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
-                            ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
-                    --(*target)->data.mapping.size;
                     /* merge */
                     if (src.value->type == YOML_TYPE_SEQUENCE) {
                         for (j = 0; j != src.value->data.sequence.size; ++j)
-                            if (yoml__merge(target, i, src.value->data.sequence.elements[j], parse_args) != 0) {
+                            if (yoml__merge(target, i + 1, src.value->data.sequence.elements[j], parse_args) != 0) {
                             MergeError:
                                 if (parser != NULL) {
                                     parser->problem = "value of the merge key MUST be a mapping or a sequence of mappings";
@@ -278,9 +274,13 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                                 return -1;
                             }
                     } else {
-                        if (yoml__merge(target, i, src.value, parse_args) != 0)
+                        if (yoml__merge(target, i + 1, src.value, parse_args) != 0)
                             goto MergeError;
                     }
+                    /* erase the slot (as well as preserving the values) */
+                    memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
+                            ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
+                    --(*target)->data.mapping.size;
                     /* cleanup */
                     yoml_free(src.key, parse_args->mem_set);
                     yoml_free(src.value, parse_args->mem_set);
