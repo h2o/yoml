@@ -179,15 +179,15 @@ static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
     return node;
 }
 
-static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_parse_args_t *parse_args)
+static inline int yoml__merge(yoml_t **dest, size_t offset, size_t delete_count, yoml_t *src, yoml_parse_args_t *parse_args)
 {
-    assert(offset >= 1);
+    assert(offset + delete_count <= (*dest)->data.mapping.size);
 
     if (src->type != YOML_TYPE_MAPPING)
         return -1;
 
     /* create new node, copy attributes and elements of `*dest` up to `offset` */
-    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size) *
+    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size - delete_count) *
                                                                             sizeof(new_node->data.mapping.elements[0]));
     memcpy(new_node, *dest, offsetof(yoml_t, data.mapping.elements) + offset * sizeof((*dest)->data.mapping.elements[0]));
     new_node->_refcnt = 1;
@@ -197,7 +197,7 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_pa
     for (size_t i = 0; i != src->data.mapping.size; ++i) {
         yoml_mapping_element_t *src_element = src->data.mapping.elements + i;
         if (src_element->key->type == YOML_TYPE_SCALAR) {
-            for (size_t j = offset; j != (*dest)->data.mapping.size; ++j) {
+            for (size_t j = offset + delete_count; j != (*dest)->data.mapping.size; ++j) {
                 if ((*dest)->data.mapping.elements[j].key->type == YOML_TYPE_SCALAR &&
                     strcmp((*dest)->data.mapping.elements[j].key->data.scalar, src_element->key->data.scalar) == 0)
                     goto Skip;
@@ -207,10 +207,10 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, yoml_t *src, yoml_pa
     Skip:;
     }
 
-    /* copy elements of `*dest` after `offset` */
-    memcpy(new_node->data.mapping.elements + new_node->data.mapping.size, (*dest)->data.mapping.elements + offset,
-           ((*dest)->data.mapping.size - offset) * sizeof(new_node->data.mapping.elements[0]));
-    new_node->data.mapping.size += (*dest)->data.mapping.size - offset;
+    /* copy elements of `*dest` after `offset + delete_count` */
+    memcpy(new_node->data.mapping.elements + new_node->data.mapping.size, (*dest)->data.mapping.elements + offset + delete_count,
+           ((*dest)->data.mapping.size - offset - delete_count) * sizeof(new_node->data.mapping.elements[0]));
+    new_node->data.mapping.size += (*dest)->data.mapping.size - offset - delete_count;
 
     /* increment the reference counters of the elements being added to the newly created node */
     for (size_t i = 0; i != new_node->data.mapping.size; ++i) {
@@ -252,7 +252,7 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                     /* merge */
                     if (src.value->type == YOML_TYPE_SEQUENCE) {
                         for (j = 0; j != src.value->data.sequence.size; ++j)
-                            if (yoml__merge(target, i + 1, src.value->data.sequence.elements[j], parse_args) != 0) {
+                            if (yoml__merge(target, i, j == 0, src.value->data.sequence.elements[j], parse_args) != 0) {
                             MergeError:
                                 if (parser != NULL) {
                                     parser->problem = "value of the merge key MUST be a mapping or a sequence of mappings";
@@ -262,13 +262,9 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
                                 return -1;
                             }
                     } else {
-                        if (yoml__merge(target, i + 1, src.value, parse_args) != 0)
+                        if (yoml__merge(target, i, 1, src.value, parse_args) != 0)
                             goto MergeError;
                     }
-                    /* erase the slot (as well as preserving the values) */
-                    memmove((*target)->data.mapping.elements + i, (*target)->data.mapping.elements + i + 1,
-                            ((*target)->data.mapping.size - i - 1) * sizeof((*target)->data.mapping.elements[0]));
-                    --(*target)->data.mapping.size;
                 }
             } while (i != 0);
         }
