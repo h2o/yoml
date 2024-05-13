@@ -51,23 +51,25 @@ static inline char *yoml__strdup(yaml_char_t *s)
     return strdup((char *)s);
 }
 
-static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, size_t sz, yaml_char_t *anchor, yaml_char_t *tag, yaml_event_t *event)
+static inline size_t yoml__scalar_get_line(yaml_event_t *event)
+{
+    switch (event->data.scalar.style) {
+    case YAML_LITERAL_SCALAR_STYLE:
+    case YAML_FOLDED_SCALAR_STYLE:
+        return event->start_mark.line + 1;
+    default:
+        return event->start_mark.line;
+    }
+}
+
+static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, size_t sz, yaml_char_t *anchor, yaml_char_t *tag,
+                                     size_t line, size_t column)
 {
     yoml_t *node = malloc(sz);
     node->filename = filename != NULL ? strdup(filename) : NULL;
     node->type = type;
-    node->line = event->start_mark.line;
-    if (type == YOML_TYPE_SCALAR) {
-        switch (event->data.scalar.style) {
-        case YAML_LITERAL_SCALAR_STYLE:
-        case YAML_FOLDED_SCALAR_STYLE:
-            ++node->line;
-            break;
-        default:
-            break;
-        }
-    }
-    node->column = event->start_mark.column;
+    node->line = line;
+    node->column = column;
     node->anchor = anchor != NULL ? yoml__strdup(anchor) : NULL;
     node->tag = tag != NULL ? yoml__strdup(tag) : NULL;
     node->_refcnt = 1;
@@ -77,7 +79,8 @@ static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, siz
 static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_event_t *event, yoml_parse_args_t *parse_args)
 {
     yoml_t *seq = yoml__new_node(parse_args->filename, YOML_TYPE_SEQUENCE, offsetof(yoml_t, data.sequence.elements),
-                                 event->data.sequence_start.anchor, event->data.sequence_start.tag, event);
+                                 event->data.sequence_start.anchor, event->data.sequence_start.tag, event->start_mark.line,
+                                 event->start_mark.column);
 
     seq->data.sequence.size = 0;
 
@@ -103,7 +106,8 @@ static inline yoml_t *yoml__parse_sequence(yaml_parser_t *parser, yaml_event_t *
 static inline yoml_t *yoml__parse_mapping(yaml_parser_t *parser, yaml_event_t *event, yoml_parse_args_t *parse_args)
 {
     yoml_t *map = yoml__new_node(parse_args->filename, YOML_TYPE_MAPPING, offsetof(yoml_t, data.mapping.elements),
-                                event->data.mapping_start.anchor, event->data.mapping_start.tag, event);
+                                 event->data.mapping_start.anchor, event->data.mapping_start.tag, event->start_mark.line,
+                                 event->start_mark.column);
 
     map->data.mapping.size = 0;
 
@@ -153,11 +157,13 @@ static yoml_t *yoml__parse_node(yaml_parser_t *parser, yaml_event_type_t *unhand
 
     switch (event.type) {
     case YAML_ALIAS_EVENT:
-        node = yoml__new_node(parse_args->filename, YOML__TYPE_UNRESOLVED_ALIAS, sizeof(*node), NULL, NULL, &event);
+        node = yoml__new_node(parse_args->filename, YOML__TYPE_UNRESOLVED_ALIAS, sizeof(*node), NULL, NULL, event.start_mark.line,
+                              event.start_mark.column);
         node->data.alias = yoml__strdup(event.data.alias.anchor);
         break;
     case YAML_SCALAR_EVENT:
-        node = yoml__new_node(parse_args->filename, YOML_TYPE_SCALAR, sizeof(*node), event.data.scalar.anchor, event.data.scalar.tag, &event);
+        node = yoml__new_node(parse_args->filename, YOML_TYPE_SCALAR, sizeof(*node), event.data.scalar.anchor,
+                              event.data.scalar.tag, yoml__scalar_get_line(&event), event.start_mark.column);
         node->data.scalar = yoml__strdup(event.data.scalar.value);
         if (parse_args->mem_set != NULL)
             parse_args->mem_set(event.data.scalar.value, 'A', strlen(node->data.scalar));
@@ -188,10 +194,12 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, size_t delete_count,
         return -1;
 
     /* create new node, copy attributes and elements of `*dest` up to `offset` */
-    yoml_t *new_node = malloc(offsetof(yoml_t, data.mapping.elements) + ((*dest)->data.mapping.size + src->data.mapping.size - delete_count) *
-                                                                            sizeof(new_node->data.mapping.elements[0]));
-    memcpy(new_node, *dest, offsetof(yoml_t, data.mapping.elements) + offset * sizeof((*dest)->data.mapping.elements[0]));
-    new_node->_refcnt = 1;
+    yoml_t *new_node = yoml__new_node((*dest)->filename, (*dest)->type,
+                                      offsetof(yoml_t, data.mapping.elements) +
+                                          ((*dest)->data.mapping.size + src->data.mapping.size - delete_count) *
+                                              sizeof(new_node->data.mapping.elements[0]),
+                                      (void *)(*dest)->anchor, (void *)(*dest)->tag, (*dest)->line, (*dest)->column);
+    memcpy(new_node->data.mapping.elements, (*dest)->data.mapping.elements, offset * sizeof(new_node->data.mapping.elements[0]));
     new_node->data.mapping.size = offset;
 
     /* copy elements from `src`, ignoring the ones that are defined later in `*dest` */
