@@ -213,13 +213,15 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, size_t delete_count,
            ((*dest)->data.mapping.size - offset - delete_count) * sizeof(new_node->data.mapping.elements[0]));
     new_node->data.mapping.size += (*dest)->data.mapping.size - offset - delete_count;
 
-    /* increment the reference counters of the elements being added to the newly created node */
+    /* increment the reference counters of the elements being added to the newly
+     * created node */
     for (size_t i = 0; i != new_node->data.mapping.size; ++i) {
         ++new_node->data.mapping.elements[i].key->_refcnt;
         ++new_node->data.mapping.elements[i].value->_refcnt;
     }
 
     /* replace `*dest` with `new_node` */
+    yoml_free(*dest, parse_args->mem_set);
     *dest = new_node;
 
     return 0;
