@@ -73,6 +73,7 @@ static inline yoml_t *yoml__new_node(const char *filename, yoml_type_t type, siz
     node->anchor = anchor != NULL ? yoml__strdup(anchor) : NULL;
     node->tag = tag != NULL ? yoml__strdup(tag) : NULL;
     node->_refcnt = 1;
+    node->_merged = 0;
     return node;
 }
 
@@ -199,6 +200,7 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, size_t delete_count,
                                           ((*dest)->data.mapping.size + src->data.mapping.size - delete_count) *
                                               sizeof(new_node->data.mapping.elements[0]),
                                       (void *)(*dest)->anchor, (void *)(*dest)->tag, (*dest)->line, (*dest)->column);
+    new_node->_merged = (*dest)->_merged;
     memcpy(new_node->data.mapping.elements, (*dest)->data.mapping.elements, offset * sizeof(new_node->data.mapping.elements[0]));
     new_node->data.mapping.size = offset;
 
@@ -238,6 +240,10 @@ static inline int yoml__merge(yoml_t **dest, size_t offset, size_t delete_count,
 static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yoml_parse_args_t *parse_args)
 {
     size_t i, j;
+
+    if ((*target)->_merged)
+        return 0;
+    (*target)->_merged = 1;
 
     switch ((*target)->type) {
     case YOML_TYPE_SCALAR:
