@@ -288,7 +288,6 @@ static inline int yoml__resolve_merge(yoml_t **target, yaml_parser_t *parser, yo
     return 0;
 }
 
-
 static inline int yoml__resolve_alias(yoml_t **target, yoml_t *doc, yaml_parser_t *parser, yoml_parse_args_t *parse_args)
 {
     size_t i;
@@ -351,24 +350,24 @@ static inline int yoml__resolve_tag(yoml_t **target, yaml_parser_t *parser, yoml
     }
 
     switch ((*target)->type) {
-        case YOML_TYPE_SCALAR:
-            break;
-        case YOML_TYPE_SEQUENCE:
-            for (i = 0; i != (*target)->data.sequence.size; ++i) {
-                if (yoml__resolve_tag((*target)->data.sequence.elements + i, parser, parse_args) != 0)
-                    return -1;
-            }
-            break;
-        case YOML_TYPE_MAPPING:
-            for (i = 0; i != (*target)->data.mapping.size; ++i) {
-                if (yoml__resolve_tag(&(*target)->data.mapping.elements[i].key, parser, parse_args) != 0)
-                    return -1;
-                if (yoml__resolve_tag(&(*target)->data.mapping.elements[i].value, parser, parse_args) != 0)
-                    return -1;
-            }
-            break;
-        case YOML__TYPE_UNRESOLVED_ALIAS:
-            break;
+    case YOML_TYPE_SCALAR:
+        break;
+    case YOML_TYPE_SEQUENCE:
+        for (i = 0; i != (*target)->data.sequence.size; ++i) {
+            if (yoml__resolve_tag((*target)->data.sequence.elements + i, parser, parse_args) != 0)
+                return -1;
+        }
+        break;
+    case YOML_TYPE_MAPPING:
+        for (i = 0; i != (*target)->data.mapping.size; ++i) {
+            if (yoml__resolve_tag(&(*target)->data.mapping.elements[i].key, parser, parse_args) != 0)
+                return -1;
+            if (yoml__resolve_tag(&(*target)->data.mapping.elements[i].value, parser, parse_args) != 0)
+                return -1;
+        }
+        break;
+    case YOML__TYPE_UNRESOLVED_ALIAS:
+        break;
     }
 
     return 0;
