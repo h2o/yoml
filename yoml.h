@@ -26,6 +26,7 @@
 extern "C" {
 #endif
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -71,6 +72,7 @@ static inline void yoml_free(yoml_t *node, void *(*mem_set)(void *, int, size_t)
     if (node == NULL)
         return;
 
+    assert(node->_refcnt > 0);
     if (--node->_refcnt == 0) {
         free(node->filename);
         free(node->anchor);
