@@ -57,6 +57,7 @@ struct st_yoml_t {
     char *anchor;
     char *tag;
     size_t _refcnt;
+    unsigned _merged : 1;
     union {
         char *scalar;
         yoml_sequence_t sequence;
